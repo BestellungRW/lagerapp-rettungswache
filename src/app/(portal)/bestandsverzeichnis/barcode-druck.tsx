@@ -6,8 +6,8 @@ import { jsPDF } from "jspdf";
 import { toEan13, todayLabel } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
-/** Einheitliche Strichcode-Größe für den Ausdruck: 5 cm breit, 1 cm hoch. */
-const BAR_WIDTH_MM = 50;
+/** Einheitliche Strichcode-Größe für den Ausdruck: 8 cm breit, 1 cm hoch. */
+const BAR_WIDTH_MM = 80;
 const BAR_HEIGHT_MM = 10;
 
 function renderBarcode(value: string): { url: string; aspect: number } {
@@ -42,18 +42,18 @@ function renderBarcode(value: string): { url: string; aspect: number } {
 function buildPdf(products: Product[], stationName: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
-  const cols = 3;
+  const cols = 2;
   const x0 = 10;
   const y0 = 24;
-  const gapX = 6;
-  const rowH = 20;
-  const labelPad = 9;
+  const gapX = 10;
+  const rowH = 27;
+  const labelPad = 13;
 
   doc.setFontSize(12);
   doc.text("Strichcodes – " + stationName + " – " + todayLabel(), 10, 11);
   doc.setFontSize(8);
   doc.text(
-    "Barcode-Größe einheitlich: 5 cm x 1 cm",
+    "Barcode-Größe einheitlich: 8 cm x 1 cm – die Nummer darunter ist zum manuellen Eingeben gedacht",
     10,
     17
   );
@@ -70,7 +70,7 @@ function buildPdf(products: Product[], stationName: string) {
 
     const { url, aspect } = renderBarcode(p.barcode);
 
-    // Verzerrungsfrei in die 5x1-cm-Fläche einpassen
+    // Verzerrungsfrei in die 8x1-cm-Fläche einpassen
     let w = BAR_WIDTH_MM;
     let h = w / aspect;
     if (h > BAR_HEIGHT_MM) {
@@ -82,11 +82,28 @@ function buildPdf(products: Product[], stationName: string) {
 
     doc.addImage(url, "PNG", dx, dy, w, h);
 
+    // Barcode-Nummer groß und gut lesbar unter dem Strichcode
+    const number = p.barcode;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(24);
+    let numPad = 8;
+    while (
+      doc.getTextWidth(number) > BAR_WIDTH_MM - numPad &&
+      numPad <= 80
+    ) {
+      doc.setFontSize(doc.getFontSize() - 1);
+      numPad += 2;
+    }
+    doc.text(number, x + BAR_WIDTH_MM / 2, y + BAR_HEIGHT_MM + 6, {
+      align: "center",
+    });
+
+    doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     let name = p.name;
-    if (name.length > 22) name = name.slice(0, 21) + "…";
-    doc.text(name, x, y + BAR_HEIGHT_MM + 4);
-    doc.text("Soll: " + p.soll, x, y + BAR_HEIGHT_MM + 7);
+    if (name.length > 30) name = name.slice(0, 29) + "…";
+    doc.text(name, x, y + BAR_HEIGHT_MM + 9.5);
+    doc.text("Soll: " + p.soll, x, y + BAR_HEIGHT_MM + 12);
     doc.setDrawColor(200);
     doc.rect(x, y, BAR_WIDTH_MM, BAR_HEIGHT_MM + labelPad);
   });
@@ -138,8 +155,9 @@ export default function BarcodeDruck({
           </h2>
           <p className="mt-1 text-sm text-stone-600">
             Wählen Sie die Artikel aus, deren Strichcode als PDF gedruckt
-            werden soll. Der Barcode ist immer einheitlich 5 cm breit und 1 cm
-            hoch; darunter steht der Artikel mit der Soll-Menge.
+            werden soll. Der Barcode ist immer einheitlich 8 cm breit und 1 cm
+            hoch; darunter steht die Barcode-Nummer groß und gut lesbar zum
+            manuellen Eingeben sowie der Artikel mit der Soll-Menge.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { Html5Qrcode } from "html5-qrcode";
 
 interface Props {
@@ -18,26 +18,41 @@ export default function BarcodeScanner({ active, paused, onScan }: Props) {
   const [manual, setManual] = useState("");
   const scannerRef = useRef<Html5Qrcode | null>(null);
   const lastScanRef = useRef(0);
+  const onScanRef = useRef(onScan);
 
-  function stopScanner() {
+  useEffect(() => {
+    onScanRef.current = onScan;
+  }, [onScan]);
+
+  const stopInstance = useCallback((inst: Html5Qrcode) => {
+    try {
+      inst.stop().catch(() => {});
+    } catch {
+      // html5-qrcode wirft synchron, wenn der Scanner (noch) nicht läuft.
+    }
+    try {
+      inst.clear();
+    } catch {
+      // clear() wirft, solange der asynchrone Stop noch läuft – ignorieren,
+      // das Reader-Element wird beim nächsten Start neu befüllt.
+    }
+  }, []);
+
+  const stopScanner = useCallback(() => {
     const inst = scannerRef.current;
     if (!inst) return;
     scannerRef.current = null;
-    inst.stop().catch(() => {});
-    inst.clear();
     setRunning(false);
-  }
+    stopInstance(inst);
+  }, [stopInstance]);
 
   useEffect(() => {
     return () => {
       const inst = scannerRef.current;
-      if (inst) {
-        inst.stop().catch(() => {});
-        inst.clear();
-      }
       scannerRef.current = null;
+      if (inst) stopInstance(inst);
     };
-  }, []);
+  }, [stopInstance]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,12 +79,12 @@ export default function BarcodeScanner({ active, paused, onScan }: Props) {
             const now = Date.now();
             if (now - lastScanRef.current < 1500) return;
             lastScanRef.current = now;
-            onScan(decoded);
+            onScanRef.current(decoded);
           },
           () => {}
         );
         if (cancelled) {
-          await instance.stop().catch(() => {});
+          stopInstance(instance);
           scannerRef.current = null;
           return;
         }
@@ -89,7 +104,7 @@ export default function BarcodeScanner({ active, paused, onScan }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [active, paused, onScan]);
+  }, [active, paused, stopScanner, stopInstance]);
 
   function submitManual(e: React.FormEvent) {
     e.preventDefault();
