@@ -3,21 +3,25 @@
 import { useState } from "react";
 import JsBarcode from "jsbarcode";
 import { jsPDF } from "jspdf";
-import { toEan13, todayLabel } from "@/lib/format";
+import { toEan13 } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
-/** Einheitliche Strichcode-Größe für den Ausdruck: 8 cm breit, 1 cm hoch. */
-const BAR_WIDTH_MM = 80;
-const BAR_HEIGHT_MM = 10;
+/** HERMA-5051-Etikettenbogen: A4, 48,3 x 25,4 mm, 4 x 11 Etiketten. */
+const LABEL_W = 48.26;
+const LABEL_H = 25.4;
+const COLS = 4;
+const ROWS = 11;
+const PAGE_LEFT = 8.48;
+const PAGE_TOP = 8.8;
 
 function renderBarcode(value: string): { url: string; aspect: number } {
   const canvas = document.createElement("canvas");
   const ean = toEan13(value);
   if (ean === value) {
-    // EAN-13: feste Länge / festes Erscheinungsbild
+    // EAN-13: feste Länge, höheres Erscheinungsbild für bessere Scanbarkeit
     const moduleWidth = 2;
     const moduleCount = 95;
-    const height = (moduleCount * moduleWidth) / 5; // exakt 5:1
+    const height = (moduleCount * moduleWidth) / 2; // ~2:1, Balken länger
     JsBarcode(canvas, ean, {
       format: "EAN13",
       width: moduleWidth,
@@ -30,85 +34,87 @@ function renderBarcode(value: string): { url: string; aspect: number } {
     JsBarcode(canvas, value, {
       format: "CODE128",
       width: 2,
-      height: 38,
+      height: 60,
       margin: 0,
       displayValue: false,
     });
   }
-  const aspect = canvas.height > 0 ? canvas.width / canvas.height : 5;
+  const aspect = canvas.height > 0 ? canvas.width / canvas.height : 2;
   return { url: canvas.toDataURL("image/png"), aspect };
+}
+
+/** Barcode-Nummer auf eine Zeilenbreite umbrechen und Schriftgröße passend wählen. */
+function numberLines(doc: jsPDF, text: string, maxWmm: number) {
+  let size = 11;
+  for (;;) {
+    doc.setFontSize(size);
+    const lines: string[] = [];
+    let rest = text;
+    while (rest) {
+      let take = rest.length;
+      while (take > 0 && doc.getTextWidth(rest.slice(0, take)) > maxWmm) take--;
+      if (take <= 0) break;
+      lines.push(rest.slice(0, take));
+      rest = rest.slice(take);
+    }
+    if (lines.length >= 1 && lines.length <= 2) return { lines, size };
+    size -= 0.5;
+    if (size < 6) return { lines: [text], size };
+  }
 }
 
 function buildPdf(products: Product[], stationName: string) {
   const doc = new jsPDF({ unit: "mm", format: "a4" });
 
-  const cols = 2;
-  const x0 = 10;
-  const y0 = 24;
-  const gapX = 10;
-  const rowH = 27;
-  const labelPad = 13;
-
-  doc.setFontSize(12);
-  doc.text("Strichcodes – " + stationName + " – " + todayLabel(), 10, 11);
-  doc.setFontSize(8);
-  doc.text(
-    "Barcode-Größe einheitlich: 8 cm x 1 cm – die Nummer darunter ist zum manuellen Eingeben gedacht",
-    10,
-    17
-  );
-
   products.forEach((p, i) => {
-    const col = i % cols;
-    const row = Math.floor(i / cols);
-    const x = x0 + col * (BAR_WIDTH_MM + gapX);
-    let y = y0 + row * rowH;
-    if (y + rowH > 297 - 10) {
-      doc.addPage();
-      y = y0;
-    }
+    const page = Math.floor(i / (COLS * ROWS));
+    const onPage = i - page * COLS * ROWS;
+    const col = onPage % COLS;
+    const row = Math.floor(onPage / COLS);
+    if (page > doc.getNumberOfPages() - 1) doc.addPage();
+
+    const x = PAGE_LEFT + col * LABEL_W;
+    const y = PAGE_TOP + row * LABEL_H;
+
+    // Rechte Seite: Strichcode (max. bis auf linke Spalte)
+    const zoneX = x + 17;
+    const zoneW = x + LABEL_W - 1.5 - zoneX;
+    const zoneH = LABEL_H - 8.5;
 
     const { url, aspect } = renderBarcode(p.barcode);
-
-    // Verzerrungsfrei in die 8x1-cm-Fläche einpassen
-    let w = BAR_WIDTH_MM;
-    let h = w / aspect;
-    if (h > BAR_HEIGHT_MM) {
-      h = BAR_HEIGHT_MM;
-      w = h * aspect;
-    }
-    const dx = x + (BAR_WIDTH_MM - w) / 2;
-    const dy = y + (BAR_HEIGHT_MM - h) / 2;
-
+    const w = Math.min(zoneW, zoneH * aspect);
+    const h = w / aspect;
+    const dx = zoneX + (zoneW - w) / 2;
+    const dy = y + 1.2 + (zoneH - h) / 2;
     doc.addImage(url, "PNG", dx, dy, w, h);
 
-    // Barcode-Nummer groß und gut lesbar unter dem Strichcode
-    const number = p.barcode;
+    // Linke Seite: Barcode-Nummer, gut sichtbar
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(24);
-    let numPad = 8;
-    while (
-      doc.getTextWidth(number) > BAR_WIDTH_MM - numPad &&
-      numPad <= 80
-    ) {
-      doc.setFontSize(doc.getFontSize() - 1);
-      numPad += 2;
-    }
-    doc.text(number, x + BAR_WIDTH_MM / 2, y + BAR_HEIGHT_MM + 6, {
-      align: "center",
+    const { lines, size } = numberLines(doc, p.barcode, 15);
+    const lh = size * 0.3528 * 1.25; // Zeilenhöhe in mm
+    const top = y + 1.2 + (zoneH - lines.length * lh) / 2 + lh * 0.8;
+    lines.forEach((line, li) => {
+      doc.setFontSize(size);
+      doc.text(line, x + 1.2, top + li * lh);
     });
 
+    // Unten: Artikel mit Soll-Menge, gut lesbar
     doc.setFont("helvetica", "normal");
     doc.setFontSize(7);
     let name = p.name;
-    if (name.length > 30) name = name.slice(0, 29) + "…";
-    doc.text(name, x, y + BAR_HEIGHT_MM + 9.5);
-    doc.text("Soll: " + p.soll, x, y + BAR_HEIGHT_MM + 12);
-    doc.setDrawColor(200);
-    doc.rect(x, y, BAR_WIDTH_MM, BAR_HEIGHT_MM + labelPad);
+    while (name && doc.getTextWidth(name) > LABEL_W - 2.4) {
+      name = name.slice(0, -1);
+    }
+    if (name !== p.name) name = name.slice(0, -1) + "…";
+    doc.text(name, x + 1.2, y + LABEL_H - 4.6);
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(9);
+    doc.text("Soll: " + p.soll, x + 1.2, y + LABEL_H - 1.8);
   });
 
-  const file = "Strichcodes_" + stationName.toLowerCase().replace(/\W+/g, "-");
+  const file =
+    "Strichcodes_HERMA5051_" + stationName.toLowerCase().replace(/\W+/g, "-");
   doc.save(file + ".pdf");
 }
 
@@ -155,9 +161,10 @@ export default function BarcodeDruck({
           </h2>
           <p className="mt-1 text-sm text-stone-600">
             Wählen Sie die Artikel aus, deren Strichcode als PDF gedruckt
-            werden soll. Der Barcode ist immer einheitlich 8 cm breit und 1 cm
-            hoch; darunter steht die Barcode-Nummer groß und gut lesbar zum
-            manuellen Eingeben sowie der Artikel mit der Soll-Menge.
+            werden soll. Das PDF ist für den Etikettenbogen HERMA 5051
+            ausgelegt (A4, 48,3 x 25,4 mm, 44 Etiketten pro Bogen). Je
+            Etikett steht links die Barcode-Nummer, rechts der Strichcode und
+            unten gut lesbar der Artikel mit der Soll-Menge.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
