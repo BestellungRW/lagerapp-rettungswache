@@ -8,7 +8,13 @@ import {
   fileNameFor,
   pdfDataUriBase64,
 } from "@/lib/order-pdf";
-import { expiryToLabel, isExpired, parseExpiry, todayLabel } from "@/lib/format";
+import {
+  expiryToLabel,
+  interpretExpiry,
+  isExpired,
+  parseExpiry,
+  todayLabel,
+} from "@/lib/format";
 import type {
   OrderRow,
   PackageRow,
@@ -30,6 +36,14 @@ interface FormState {
   ist: string;
   packages: { count: string; expiry: string }[];
   error: string | null;
+}
+
+/** Summe der Mengen aller als verfallen erkannten Packungen (übergebene Pakete haben count als Zahl). */
+function expQty(packages: { count: number; expiry: string }[]): number {
+  return packages.reduce((sum, p) => {
+    const parsed = parseExpiry(p.expiry);
+    return parsed && isExpired(parsed) ? sum + p.count : sum;
+  }, 0);
 }
 
 export default function ScanClient({
@@ -69,7 +83,7 @@ export default function ScanClient({
   const totalOrder = useMemo(
     () =>
       entryList.reduce(
-        (sum, e) => sum + Math.max(0, e.product.soll - e.ist),
+        (sum, e) => sum + Math.max(0, e.product.soll - e.ist + expQty(e.packages)),
         0
       ),
     [entryList]
@@ -77,7 +91,10 @@ export default function ScanClient({
 
   function buildRows(): OrderRow[] {
     return entryList.map((e) => {
-      const order = Math.max(0, e.product.soll - e.ist);
+      const order = Math.max(
+        0,
+        e.product.soll - e.ist + expQty(e.packages)
+      );
       return {
         name: e.product.name,
         barcode: e.product.barcode,
@@ -131,34 +148,30 @@ export default function ScanClient({
       const rows = form.packages.filter(
         (r) => r.count.trim() !== "" || r.expiry.trim() !== ""
       );
-      if (rows.length === 0) {
-        setForm({ ...form, error: "Bitte mindestens eine Packung angeben." });
-        return;
-      }
+      // Vergriffen/leer = Menge 0 ist zulässig.
+      const packages: PackageRow[] = [];
       for (const row of rows) {
-        const count = Math.floor(Number(row.count));
-        if (!Number.isFinite(count) || count < 1) {
+        const raw = row.count.trim() === "" ? 0 : Math.floor(Number(row.count));
+        if (row.count.trim() !== "" && !Number.isFinite(raw)) {
           setForm({
             ...form,
-            error: "Mengen müssen als positive ganze Zahlen eingegeben werden.",
+            error: "Mengen müssen als ganze Zahlen eingegeben werden.",
           });
           return;
         }
-        const parsed = parseExpiry(row.expiry);
-        if (!parsed) {
-          setForm({
-            ...form,
-            error:
-              "Verfallsdatum bitte im Format MM.JJJJ angeben (z. B. 06.2027).",
-          });
+        const count = raw > 0 ? raw : 0;
+        if (count === 0) continue; // Zeile ohne Menge = keine Packung
+        const interp = interpretExpiry(row.expiry);
+        if (!interp.ok) {
+          setForm({ ...form, error: interp.hint });
           return;
         }
+        packages.push({
+          count,
+          expiry: expiryToLabel({ mm: interp.mm, yyyy: interp.yyyy }),
+        });
       }
-      const ist = rows.reduce((sum, r) => sum + Math.floor(Number(r.count)), 0);
-      const packages: PackageRow[] = rows.map((r) => ({
-        count: Math.floor(Number(r.count)),
-        expiry: r.expiry.trim(),
-      }));
+      const ist = packages.reduce((sum, p) => sum + p.count, 0);
       const entry: ScanEntry = { product: form.product, ist, packages };
       setEntries((prev) => ({ ...prev, [form.product.id]: entry }));
       setForm(null);
@@ -166,10 +179,11 @@ export default function ScanClient({
     }
 
     const ist = Math.floor(Number(form.ist));
-    if (!Number.isFinite(ist) || ist < 1) {
+    if (!Number.isFinite(ist) || ist < 0) {
       setForm({
         ...form,
-        error: "Bitte eine gültige Ist-Menge (mind. 1) eintragen.",
+        error:
+          "Bitte eine gültige Ist-Menge eintragen (0 ist erlaubt, z. B. wenn der Artikel vergriffen ist).",
       });
       return;
     }
@@ -303,9 +317,12 @@ export default function ScanClient({
       {expiryMode && (
         <p className="notice text-sm">
           <strong>Verfallsdatenkontrolle aktiv:</strong> Zusätzlich zur Menge
-          wird pro Packung das Verfallsdatum im Format MM.JJJJ abgefragt.
-          Packungen, deren Verfallsmonat im aktuellen Monat liegt, gelten als
-          verfallen (Kontrolle am jeweiligen Monatsende).
+          wird pro Packung das Verfallsdatum abgefragt. Viele Formate werden
+          erkannt (z. B. 09/26, 09.2026, 092026, 01.09.2026, 01/09/26,
+          01092026) – bei Unklarheiten erhalten Sie einen Hinweis.
+          Verfallene Packungen zählen nicht mehr als Bestand und erhöhen
+          direkt die zu bestellende Menge (Ersatzbeschaffung). Menge 0 bedeutet
+          „vergriffen“ und wird nachbestellt.
         </p>
       )}
 
@@ -370,16 +387,20 @@ export default function ScanClient({
                 <input
                   id="ist-count"
                   type="number"
-                  min={1}
+                  min={0}
                   inputMode="numeric"
                   className="input sm:max-w-52"
-                  placeholder="z. B. 12"
+                  placeholder="z. B. 12, 0 = vergriffen"
                   value={form.ist}
                   onChange={(e) =>
                     setForm({ ...form, ist: e.target.value, error: null })
                   }
                   autoFocus
                 />
+                <p className="mt-1 text-xs text-stone-500">
+                  0 eintragen, wenn der Artikel vergriffen ist – er wird dann
+                  nachbestellt.
+                </p>
               </div>
             )}
 
@@ -404,7 +425,7 @@ export default function ScanClient({
                         <label className="label">Menge</label>
                         <input
                           type="number"
-                          min={1}
+                          min={0}
                           inputMode="numeric"
                           className="input sm:w-28"
                           placeholder="z. B. 5"
@@ -420,13 +441,13 @@ export default function ScanClient({
                         <label className="label">
                           Verfallsdatum{" "}
                           <span className="font-normal text-stone-500">
-                            (MM.JJJJ)
+                            (z. B. 09/2026 oder 01.09.2026)
                           </span>
                         </label>
                         <input
                           type="text"
                           inputMode="numeric"
-                          placeholder="z. B. 06.2027"
+                          placeholder="z. B. 092026, 09/26, 01.09.2026"
                           className={
                             expired ? "input border-accent-400" : "input"
                           }
@@ -437,10 +458,21 @@ export default function ScanClient({
                             setForm({ ...form, packages: next, error: null });
                           }}
                         />
+                        {pkg.expiry.trim() !== "" && !parsed && (
+                          <p className="mt-1 text-xs font-semibold text-accent-700">
+                            Verfallsdatum nicht erkannt – bitte Format prüfen
+                            (z. B. 09/2026 oder 01.09.2026).
+                          </p>
+                        )}
+                        {pkg.expiry.trim() !== "" && parsed && !expired && (
+                          <p className="mt-1 text-xs text-stone-500">
+                            Erkannt: {expiryToLabel(parsed)}
+                          </p>
+                        )}
                         {expired && pkg.expiry.trim() && (
                           <p className="mt-1 text-xs font-semibold text-accent-700">
                             Packung ist zum Erfassungszeitpunkt bereits
-                            verfallen.
+                            verfallen und wird nachbestellt.
                           </p>
                         )}
                       </div>
@@ -569,7 +601,10 @@ export default function ScanClient({
               </thead>
               <tbody>
                 {entryList.map((e) => {
-                  const order = Math.max(0, e.product.soll - e.ist);
+                  const order = Math.max(
+                    0,
+                    e.product.soll - e.ist + expQty(e.packages)
+                  );
                   const hasExpired = e.packages.some((p) => {
                     const parsed = parseExpiry(p.expiry);
                     return parsed ? isExpired(parsed) : false;

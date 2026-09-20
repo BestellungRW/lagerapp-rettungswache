@@ -12,14 +12,133 @@ export interface ExpiryParts {
   yyyy: number;
 }
 
+export type ExpiryInterpretation =
+  | { ok: true; mm: number; yyyy: number }
+  | { ok: false; hint: string };
+
+function isValidYear(y: number): boolean {
+  return y >= 1900 && y <= 2200;
+}
+
+function monthOf(n: number): boolean {
+  return n >= 1 && n <= 12;
+}
+
+function dayOf(n: number): boolean {
+  return n >= 1 && n <= 31;
+}
+
+function year2(y: number): number {
+  return 2000 + y;
+}
+
+/**
+ * Interpretiert ein Verfallsdatum in vielen Eingabevarianten.
+ * Formate u. a.: 09/26, 09.26, 09/2026, 09.2026, 0926, 092026,
+ * 01.09.2026, 01.09.26, 01/09/26, 01/09/2026, 01092026, 26.09 (Jahr fehlt).
+ * Liefert ok:false mit Hinweis, wenn das Format mehrdeutig oder ungültig ist.
+ */
+export function interpretExpiry(input: string): ExpiryInterpretation {
+  const s = input.trim();
+  if (!s) return { ok: false, hint: "Bitte ein Verfallsdatum eingeben." };
+
+  const parts = s.split(/[.\/,\-:\s]+/).filter((p) => p !== "");
+
+  // Nur eine zusammenhängende Ziffernfolge (z. B. 0926, 092026, 01092026)
+  if (parts.length === 1) {
+    const d = parts[0];
+    if (!/^\d{2,8}$/.test(d)) {
+      return { ok: false, hint: "Bitte Datum im Format MM.JJJJ oder TT.MM.JJJJ angeben." };
+    }
+
+    if (d.length === 4) {
+      // 0926 → MMYY
+      const mm = Number(d.slice(0, 2));
+      const yy = Number(d.slice(2, 4));
+      if (monthOf(mm)) return { ok: true, mm, yyyy: year2(yy) };
+      return { ok: false, hint: "Monat nicht gültig („" + d.slice(0, 2) + "“)." };
+    }
+
+    if (d.length === 6) {
+      // 092026 → MMYYYY  oder  010926 → DDMMYY
+      const mm = Number(d.slice(0, 2));
+      const mmdd = Number(d.slice(2, 4));
+      const yy = Number(d.slice(4, 6));
+      const yyyy = Number(d.slice(2, 6));
+      if (monthOf(mm) && isValidYear(yyyy)) {
+        return { ok: true, mm, yyyy };
+      }
+      if (dayOf(mm) && monthOf(mmdd)) {
+        return { ok: true, mm: mmdd, yyyy: year2(yy) };
+      }
+      return { ok: false, hint: "Datum nicht eindeutig – bitte Format MM.JJJJ oder TT.MM.JJJJ verwenden." };
+    }
+
+    if (d.length === 8) {
+      // 01092026 → DDMMYYYY
+      const dd = Number(d.slice(0, 2));
+      const mm = Number(d.slice(2, 4));
+      const yyyy = Number(d.slice(4, 8));
+      if (dayOf(dd) && monthOf(mm) && isValidYear(yyyy)) {
+        return { ok: true, mm, yyyy };
+      }
+      return { ok: false, hint: "Datum nicht gültig – bitte Format TT.MM.JJJJ verwenden." };
+    }
+
+    return { ok: false, hint: "Bitte Datum im Format MM.JJJJ oder TT.MM.JJJJ angeben." };
+  }
+
+  // Mehrere trenner-getrennte Teile
+  if (parts.length === 2) {
+    // 09/26, 09.2026, 2026.09
+    const a = Number(parts[0]);
+    const b = Number(parts[1]);
+    const aLen = parts[0].length;
+    const bLen = parts[1].length;
+
+    // 2026.09 → Jahr.Monat
+    if (aLen === 4 && isValidYear(a) && monthOf(b)) {
+      return { ok: true, mm: b, yyyy: a };
+    }
+    // 01.09, 09.10 → mehrdeutig (Monat.Jahr oder Tag.Monat)
+    if (bLen <= 2 && monthOf(a) && monthOf(b)) {
+      return { ok: false, hint: "Mehrdeutig – bitte Format MM.JJJJ oder TT.MM.JJJJ verwenden (z. B. 09.2026 oder 01.09.2026)." };
+    }
+    // 09.2026 → Monat.Jahr
+    if (monthOf(a) && (bLen === 4 ? isValidYear(b) : bLen === 2)) {
+      return { ok: true, mm: a, yyyy: bLen === 4 ? b : year2(b) };
+    }
+    // 26.09 → Tag.Monat (Jahr fehlt) → Hinweis
+    if (bLen <= 2 && monthOf(b) && dayOf(a) && !monthOf(a)) {
+      return { ok: false, hint: "Jahr fehlt – bitte Format MM.JJJJ oder TT.MM.JJJJ verwenden (z. B. 09.2026 oder 26.09.2026)." };
+    }
+    return { ok: false, hint: "Bitte Datum im Format MM.JJJJ oder TT.MM.JJJJ angeben." };
+  }
+
+  if (parts.length === 3) {
+    // 01.09.2026, 01.09.26, 1.9.2026
+    const dd = Number(parts[0]);
+    const mm = Number(parts[1]);
+    const last = parts[2];
+    const lastN = Number(last);
+    if (dayOf(dd) && monthOf(mm)) {
+      if (last.length === 4 && isValidYear(lastN)) {
+        return { ok: true, mm, yyyy: lastN };
+      }
+      if (last.length === 2) {
+        return { ok: true, mm, yyyy: year2(lastN) };
+      }
+      return { ok: false, hint: "Jahr nicht gültig – bitte Format TT.MM.JJJJ (z. B. 01.09.2026)." };
+    }
+    return { ok: false, hint: "Tag/Monat nicht gültig – bitte Format TT.MM.JJJJ (z. B. 01.09.2026)." };
+  }
+
+  return { ok: false, hint: "Bitte Datum im Format MM.JJJJ oder TT.MM.JJJJ angeben." };
+}
+
 export function parseExpiry(input: string): ExpiryParts | null {
-  const trimmed = input.trim();
-  const m = trimmed.match(/^(\d{1,2})[./](\d{4})$/);
-  if (!m) return null;
-  const mm = Number(m[1]);
-  const yyyy = Number(m[2]);
-  if (mm < 1 || mm > 12 || yyyy < 2000 || yyyy > 2200) return null;
-  return { mm, yyyy };
+  const r = interpretExpiry(input);
+  return r.ok ? { mm: r.mm, yyyy: r.yyyy } : null;
 }
 
 export function expiryToLabel(p: ExpiryParts): string {

@@ -106,14 +106,16 @@ export function createOrderListPdf({
 
   let toOrder = 0;
   let expiredCount = 0;
+  let expiredQty = 0;
 
   const rowData: string[][] = sorted.map((r) => {
     toOrder += Number(r.order) || 0;
     const order = Math.max(0, Number(r.order) || 0);
     if (expiryMode) {
       const packages = Array.isArray(r.packages) ? r.packages : [];
-      const expiredHere = packages.filter((p) => p.expired).length;
-      expiredCount += expiredHere;
+      const expiredHere = packages.filter((p) => p.expired);
+      expiredCount += expiredHere.length;
+      expiredQty += expiredHere.reduce((s, p) => s + (Number(p.count) || 0), 0);
       const expText = packages
         .map((p) => {
           const parts = parseExpiry(String(p.expiry));
@@ -143,7 +145,11 @@ export function createOrderListPdf({
   if (expiryMode && expiredCount > 0) {
     doc.setTextColor(185, 28, 28);
     doc.text(
-      "Hinweis: " + expiredCount + " Packung(en) als verfallen deklariert.",
+      "Hinweis: " +
+        expiredCount +
+        " Packung(en) (Menge " +
+        expiredQty +
+        ") als verfallen deklariert und in die Bestellmenge eingerechnet (Ersatzbeschaffung).",
       12,
       summaryY
     );
