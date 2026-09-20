@@ -83,8 +83,9 @@ export default async function BenutzerverwaltungPage({
       <section>
         <h1 className="h-section">Benutzerverwaltung</h1>
         <p className="mt-1 text-sm text-stone-600">
-          Klicken Sie auf eine Rettungswache, um ihre Benutzer, MPG-Konten und
-          Bestelllisten-Empfänger zu verwalten.
+          Klicken Sie auf eine Rettungswache, um ihre Benutzer und MPG-Konten
+          zu sehen. Einzelne Konten klappen ein Untermenü mit Details zum
+          Bearbeiten und Löschen auf. Die Admin-Konten finden Sie ganz unten.
         </p>
       </section>
 
