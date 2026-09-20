@@ -1,0 +1,109 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+
+  --color-med-50: #f0fdfa;
+  --color-med-100: #ccfbf1;
+  --color-med-200: #99f6e4;
+  --color-med-300: #5eead4;
+  --color-med-400: #2dd4bf;
+  --color-med-500: #14b8a6;
+  --color-med-600: #0d9488;
+  --color-med-700: #0f766e;
+  --color-med-800: #115e59;
+  --color-med-900: #134e4a;
+  --color-med-950: #042f2e;
+
+  --color-accent-100: #fee2e2;
+  --color-accent-200: #fecaca;
+  --color-accent-300: #fca5a5;
+  --color-accent-400: #f87171;
+  --color-accent-500: #ef4444;
+  --color-accent-600: #dc2626;
+  --color-accent-700: #b91c1c;
+  --color-accent-800: #991b1b;
+  --color-accent-900: #7f1d1d;
+
+  --color-cream: #f6faf9;
+
+  --shadow-card: 0 1px 2px rgb(4 47 46 / 0.06), 0 6px 18px rgb(4 47 46 / 0.06);
+  --shadow-pop: 0 4px 10px rgb(4 47 46 / 0.14);
+  --shadow-btn: 0 1px 2px rgb(4 47 46 / 0.25);
+}
+
+@layer base {
+  html {
+    scrollbar-gutter: stable;
+  }
+  body {
+    @apply bg-cream font-sans text-med-950 antialiased;
+  }
+  ::selection {
+    @apply bg-med-200 text-med-950;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-2 rounded-xl bg-linear-to-b from-med-600 to-med-800 px-4 py-2 text-sm font-semibold text-white shadow-[var(--shadow-btn)] transition hover:from-med-700 hover:to-med-950 hover:shadow-[var(--shadow-pop)] active:translate-y-px disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-red {
+    @apply from-accent-500 to-accent-700 hover:from-accent-600 hover:to-accent-800;
+  }
+  .btn-orange {
+    @apply from-amber-400 to-amber-600 hover:from-amber-500 hover:to-amber-700;
+  }
+  .btn-outline {
+    @apply bg-white text-med-800 ring-1 ring-inset ring-med-200 hover:bg-med-50;
+  }
+  .btn-small {
+    @apply rounded-lg px-3 py-1.5 text-xs shadow-none;
+  }
+  .input {
+    @apply w-full rounded-xl border border-stone-300/80 bg-white px-3 py-2 text-sm text-med-950 shadow-sm placeholder:text-stone-400 transition focus:border-med-500 focus:outline-none focus:ring-2 focus:ring-med-200;
+  }
+  .label {
+    @apply mb-1 block text-sm font-semibold text-med-900;
+  }
+  .card {
+    @apply rounded-2xl border border-med-100 bg-white p-5 shadow-[var(--shadow-card)];
+  }
+  .h-section {
+    @apply text-2xl font-bold text-med-900;
+  }
+  .h-page {
+    @apply text-xl font-bold text-med-900;
+  }
+  .notice {
+    @apply rounded-xl border border-med-200 bg-med-50 px-4 py-3 text-sm text-med-900;
+  }
+  .notice-success {
+    @apply rounded-xl border border-med-300 bg-med-100 px-4 py-3 text-sm text-med-900;
+  }
+  .notice-error {
+    @apply rounded-xl border border-accent-300 bg-accent-100 px-4 py-3 text-sm text-accent-800;
+  }
+  .table {
+    @apply w-full text-sm;
+  }
+  .table thead th {
+    @apply whitespace-nowrap border-b-2 border-med-200 bg-med-50/70 px-4 py-3 text-left font-bold text-med-900;
+  }
+  .table tbody th {
+    @apply border-b border-med-100 px-4 py-3 text-left align-middle;
+  }
+  .table td {
+    @apply border-b border-med-100 px-4 py-3 align-middle;
+  }
+  .table tbody tr:last-child td,
+  .table tfoot td {
+    @apply border-b-0;
+  }
+  .table tfoot td {
+    @apply bg-med-50/50 font-semibold;
+  }
+  .chip {
+    @apply inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold;
+  }
+}
