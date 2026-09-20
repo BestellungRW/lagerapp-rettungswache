@@ -3,7 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getStationContext } from "@/lib/station-context";
 import StationPicker from "@/components/station-picker";
 import type { Product, Station } from "@/lib/types";
-import { createProduct, updateProduct, deleteProduct } from "./actions";
+import { createProduct, updateProduct, deleteProduct, createSharedProduct } from "./actions";
 import BarcodeDruck from "./barcode-druck";
 
 export const dynamic = "force-dynamic";
@@ -111,7 +111,79 @@ export default async function BestandsverzeichnisPage({
             Artikel anlegen
           </button>
         </form>
+        <p className="mt-2 text-xs text-stone-500">
+          Vergriffen oder schon vorhanden? Beim Anlegen wird geprüft, ob der
+          Barcode in dieser Wache bereits hinterlegt ist – dann erscheint ein
+          Hinweis.
+        </p>
       </section>
+
+      {ctx.isAdmin && stations.length > 0 && (
+        <section className="card border-med-300">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-med-900">
+                Einheitliches Bestandsverzeichnis
+              </h2>
+              <p className="mt-1 text-sm text-stone-600">
+                Legt den Artikel in allen ausgewählten Rettungswachen an –
+                zusätzlich zu den eigenen Artikeln der Wachen. Wachen, in denen
+                der Barcode bereits existiert, werden übersprungen und im
+                Ergebnis genannt.
+              </p>
+            </div>
+          </div>
+          <form action={createSharedProduct} className="mt-4 space-y-4">
+            <input
+              name="name"
+              required
+              placeholder="Bezeichnung (z. B. Spritze 10 ml)"
+              className="input min-w-56 flex-1"
+            />
+            <div className="flex flex-wrap gap-2">
+              <input
+                name="barcode"
+                required
+                placeholder="Barcode"
+                className="input min-w-40 flex-1"
+              />
+              <input
+                name="soll"
+                type="number"
+                min={0}
+                defaultValue={0}
+                className="input w-24"
+                aria-label="Soll-Menge"
+              />
+              <button type="submit" className="btn">
+                In ausgewählten Wachen anlegen
+              </button>
+            </div>
+            <div>
+              <p className="label">
+                Für welche Rettungswachen gilt dieses Verzeichnis?
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {stations.map((s) => (
+                  <label
+                    key={s.id}
+                    className="flex items-start gap-2 rounded-lg border border-med-100 bg-med-50/40 p-2 text-sm"
+                  >
+                    <input
+                      type="checkbox"
+                      name="station_ids"
+                      value={s.id}
+                      defaultChecked
+                      className="mt-0.5"
+                    />
+                    <span className="font-medium text-med-900">{s.name}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </form>
+        </section>
+      )}
 
       <section className="card">
         <h2 className="text-lg font-bold text-med-900">
